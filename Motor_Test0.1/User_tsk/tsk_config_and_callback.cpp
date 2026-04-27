@@ -102,8 +102,9 @@ void Device_FDCAN1_Callback(Struct_FDCAN_Rx_Buffer *FDCAN_RxMessage)
      break;
    }
 
-   //case 0XF0:
-   case 0X7F://灵足电机数据处理
+   case 0x7F:
+   case 0XF0:
+   case 0XFD://灵足电机数据处理
    {
      Motor_RS_MIT_0.CAN_RxCpltCallback(FDCAN_RxMessage->Data);
      break;
@@ -216,9 +217,9 @@ void Device_FDCAN3_Callback(Struct_FDCAN_Rx_Buffer *FDCAN_RxMessage)
  */
 void FSI6X_UART5_Callback(uint8_t *Buffer, uint16_t Length)
 {
-  chariot.FSI6x.FSI6X_UART_RxCpltCallback(Buffer);
+  
 
-  chariot.TIM_Control_Callback();
+  
 }
 
 
@@ -253,7 +254,7 @@ void Task100us_TIM4_Callback()
     mod10 = 0;
     TIM_CAN_PeriodElapsedCallback();
   }
-  chariot.TIM_Calculate_PeriodElapsedCallback();
+  
   
 }
 
@@ -306,10 +307,10 @@ void Task1ms_TIM5_Callback()
     Motor_DM_Normal_0.CAN_Send_Enter();
    #endif
 
+   float RS_Test_Angle = -1.4f;
    #ifdef RS_TEST 
-    Motor_RS_MIT_0.CAN_Send_Enter();
+    Motor_RS_MIT_0.Set_Control_Angle(RS_Test_Angle);
     Motor_RS_MIT_0.TIM_Send_PeriodElapsedCallback();
-    Motor_RS_MIT_0.Set_Control_Torque(current);
    #endif
 
    #ifdef RMD_TEST
@@ -368,10 +369,16 @@ void Task_Init()
   Motor_DM_Normal_0.Init(&hfdcan1, 0x00, 0x01, Motor_DM_Control_Method_NORMAL_MIT);
   #endif
 
-  #ifdef RS_TEST
+  #ifdef RS_TEST//灵足要48V电源
   Motor_RS_MIT_0.Init(&hfdcan1,0XFD,0X7F, Motor_RS_Control_Method_NORMAL);
-  Motor_RS_MIT_0.CAN_Send_Set_Rx_ID(0X7F);
-  Motor_RS_MIT_0.CAN_Send_Set_Tx_ID(0XFD);
+  Motor_RS_MIT_0.CAN_Send_Set_Tx_ID(0X7F);
+  Motor_RS_MIT_0.CAN_Send_Set_Rx_ID(0X7D);
+  
+  Motor_RS_MIT_0.CAN_Send_Enter();
+ 
+  Motor_RS_MIT_0.Set_K_P(150.0f);
+  Motor_RS_MIT_0.Set_K_D(5.0f); 
+  Motor_RS_MIT_0.CAN_Send_Save_Zero();
   #endif
 
   #ifdef RMD_TEST
