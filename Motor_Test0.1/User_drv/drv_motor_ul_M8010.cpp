@@ -1,0 +1,214 @@
+#include "main.h"
+#include "usart.h"
+#include <string.h>
+#include "motor_control.h"
+#include "crc_ccitt.h"
+#include "stdio.h"
+
+#define SATURATE(_IN, _MIN, _MAX) {\
+ if (_IN < _MIN)\
+ _IN = _MIN;\
+ else if (_IN > _MAX)\
+ _IN = _MAX;\
+ } 
+
+MOTOR_recv motor1_recv_data; 
+MOTOR_recv motor3_recv_data;
+ 
+//uint32_t crc32_core(uint32_t* ptr, uint32_t len)
+//{
+//    uint32_t xbit = 0;
+//    uint32_t data = 0;
+//    uint32_t CRC32 = 0xFFFFFFFF;
+//    const uint32_t dwPolynomial = 0x04c11db7;
+//    for (uint32_t i = 0; i < len; i++)
+//    {
+//        xbit = 1 << 31;
+//        data = ptr[i];
+//        for (uint32_t bits = 0; bits < 32; bits++)
+//        {
+//            if (CRC32 & 0x80000000)
+//            {
+//                CRC32 <<= 1;
+//                CRC32 ^= dwPolynomial;
+//            }
+//            else
+//                CRC32 <<= 1;
+//            if (data & xbit)
+//                CRC32 ^= dwPolynomial;
+
+//            xbit >>= 1;
+//        }
+//    }
+//    return CRC32;
+//}
+
+int modify_data(MOTOR_send *motor_s)
+{
+    motor_s->hex_len = 17;
+    motor_s->motor_send_data.head[0] = 0xFE;
+    motor_s->motor_send_data.head[1] = 0xEE;
+	
+//		SATURATE(motor_s->id,   0,    15);
+//		SATURATE(motor_s->mode, 0,    7);
+		SATURATE(motor_s->K_P,  0.0f,   25.599f);
+		SATURATE(motor_s->K_W,  0.0f,   25.599f);
+		SATURATE(motor_s->T,   -127.99f,  127.99f);
+		SATURATE(motor_s->W,   -804.00f,  804.00f);
+		SATURATE(motor_s->Pos, -411774.0f,  411774.0f);
+
+    motor_s->motor_send_data.mode.id   = motor_s->id;
+    motor_s->motor_send_data.mode.status  = motor_s->mode;
+    motor_s->motor_send_data.comd.k_pos  = motor_s->K_P/25.6f*32768;
+    motor_s->motor_send_data.comd.k_spd  = motor_s->K_W/25.6f*32768;
+    motor_s->motor_send_data.comd.pos_des  = motor_s->Pos/6.2832f*32768;
+    motor_s->motor_send_data.comd.spd_des  = motor_s->W/6.2832f*256;
+    motor_s->motor_send_data.comd.tor_des  = motor_s->T*256;
+    motor_s->motor_send_data.CRC16 = crc_ccitt(0, (uint8_t *)&motor_s->motor_send_data, 15);
+    return 0;
+}
+
+int extract_data(MOTOR_recv *motor_r)
+{
+    if(motor_r->motor_recv_data.CRC16 !=
+        crc_ccitt(0, (uint8_t *)&motor_r->motor_recv_data, 14)){
+        // printf("[WARNING] Receive data CRC error");
+        motor_r->correct = 0;
+        return motor_r->correct;
+    }
+    else
+		{
+        motor_r->motor_id = motor_r->motor_recv_data.mode.id;
+        motor_r->mode = motor_r->motor_recv_data.mode.status;
+        motor_r->Temp = motor_r->motor_recv_data.fbk.temp;
+        motor_r->MError = motor_r->motor_recv_data.fbk.MError;
+        motor_r->W = ((float)motor_r->motor_recv_data.fbk.speed/256)*6.2832f ;
+        motor_r->T = ((float)motor_r->motor_recv_data.fbk.torque) / 256;
+        motor_r->Pos = 6.2832f*((float)motor_r->motor_recv_data.fbk.pos) / 32768;
+				motor_r->footForce = motor_r->motor_recv_data.fbk.force;
+				motor_r->correct = 1;
+        return motor_r->correct;
+    }
+}
+
+HAL_StatusTypeDef SERVO_Send_recv_Motor1(MOTOR_send *pData, MOTOR_recv *rData)
+{
+    modify_data(pData);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, GPIO_PIN_SET); // 发送模式
+    
+    // 发送的是结构体内部那个“要发给电机的数组/子结构体”的地址
+		return HAL_UART_Transmit_IT(&huart2, (uint8_t *)&(pData->motor_send_data), sizeof(pData->motor_send_data));
+}
+HAL_StatusTypeDef SERVO_Send_recv_Motor3(MOTOR_send *pData, MOTOR_recv *rData)
+{
+    modify_data(pData);   // 同样的数据转换
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_SET); // USART3 发送模式
+    
+    // 启动 USART3 发送（中断方式）
+    return HAL_UART_Transmit_IT(&huart3, (uint8_t *)&(pData->motor_send_data), sizeof(pData->motor_send_data));
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if(huart->Instance == USART2) {
+        // 处理 USART2 收到的数据 -> 放入 motor1_recv_data
+        uint8_t *buf = (uint8_t*)&motor1_recv_data.motor_recv_data;
+        if(buf[0]==0xFE && buf[1]==0xEE) {
+            motor1_recv_data.correct = 1;
+            extract_data(&motor1_recv_data);
+        }
+        // 重新启动接收，为下一帧做准备
+        HAL_UART_Receive_IT(&huart2, buf, sizeof(motor1_recv_data.motor_recv_data));
+    }
+    else if(huart->Instance == USART3) {
+        uint8_t *buf = (uint8_t*)&motor3_recv_data.motor_recv_data;
+        if(buf[0]==0xFE && buf[1]==0xEE) {
+            motor3_recv_data.correct = 1;
+            extract_data(&motor3_recv_data);  // 如果需要
+        }
+        HAL_UART_Receive_IT(&huart3, buf, sizeof(motor3_recv_data.motor_recv_data));
+    }
+}
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART2)
+    {
+        // USART2 发送完成，切回接收模式
+        HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, GPIO_PIN_RESET);
+        // 可选：启动 USART2 的接收中断（如果需要）
+        // HAL_UART_Receive_IT(&huart2, rx_buffer2, size);
+    }
+    else if (huart->Instance == USART3)
+    {
+         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_RESET);
+        // 可选：启动 USART3 的接收中断
+    }
+}
+
+//HAL_StatusTypeDef SERVO_Send_recv_Motor2(MOTOR_send *pData, MOTOR_recv *rData)
+//{
+//    uint16_t rxlen = 0;
+
+//    modify_data(pData);
+//    
+//		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);
+//		
+//    HAL_UART_Transmit(&huart3, (uint8_t *)pData, sizeof(pData->motor_send_data), 10); 
+//		
+
+//		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);
+//		
+//    HAL_UARTEx_ReceiveToIdle(&huart3, (uint8_t *)rData, sizeof(rData->motor_recv_data), &rxlen, 10);
+//		
+
+//    if(rxlen == 0)
+
+//      return HAL_TIMEOUT;
+
+//    if(rxlen != sizeof(rData->motor_recv_data))
+//			return HAL_ERROR;
+
+//    uint8_t *rp = (uint8_t *)&rData->motor_recv_data;
+//    if(rp[0] == 0xFE && rp[1] == 0xEE)
+//    {
+//        rData->correct = 1;
+//        extract_data(rData);
+//        return HAL_OK;
+//    }
+//    
+//    return HAL_ERROR;
+//}
+//HAL_StatusTypeDef SERVO_Send_recv_Motor3(MOTOR_send *pData, MOTOR_recv *rData)
+//{
+//    uint16_t rxlen = 0;
+
+//    modify_data(pData);
+//    
+//		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, GPIO_PIN_SET);
+//		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_1, GPIO_PIN_SET);
+//    HAL_UART_Transmit(&huart10, (uint8_t *)pData, sizeof(pData->motor_send_data), 10); 
+//		
+
+//		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, GPIO_PIN_RESET);
+//		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_1, GPIO_PIN_RESET);
+//    HAL_UARTEx_ReceiveToIdle(&huart10, (uint8_t *)rData, sizeof(rData->motor_recv_data), &rxlen, 10);
+//		
+
+//    if(rxlen == 0)
+
+//      return HAL_TIMEOUT;
+
+//    if(rxlen != sizeof(rData->motor_recv_data))
+//			return HAL_ERROR;
+
+//    uint8_t *rp = (uint8_t *)&rData->motor_recv_data;
+//    if(rp[0] == 0xFE && rp[1] == 0xEE)
+//    {
+//        rData->correct = 1;
+//        extract_data(rData);
+//        return HAL_OK;
+//    }
+//    
+//    return HAL_ERROR;
+//}
