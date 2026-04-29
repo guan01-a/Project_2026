@@ -59,9 +59,11 @@ Class_Motor_DM_Normal Motor_DM_Normal_0;
 Class_Motor_RS_MIT Motor_RS_MIT_0;
 Class_Motor_RMD Motor_RMD_0;
 
+//#define C610_TEST
+#define C620_TEST
 //#define GM6020_TEST
 //#define  DM_NORMAL_TEST
-#define  RS_TEST
+//#define  RS_TEST
 // #define  UL_TEST
 /* Private function declarations ---------------------------------------------*/
 
@@ -77,7 +79,7 @@ void Device_FDCAN1_Callback(Struct_FDCAN_Rx_Buffer *FDCAN_RxMessage)
 
   switch (FDCAN_RxMessage->Header.Identifier)
   {
-   case 0x201:
+   case 0x201://C610 C620数据处理
    {
      #ifdef C610_TEST
       Motor_DJI_C610_0.FDCAN_RxCpltCallback(FDCAN_RxMessage->Data);
@@ -90,7 +92,7 @@ void Device_FDCAN1_Callback(Struct_FDCAN_Rx_Buffer *FDCAN_RxMessage)
      break;
    }
 
-   case 0x205:
+   case 0x205://6020电机数据处理
    {
      Motor_DJI_GM6020_0.FDCAN_RxCpltCallback(FDCAN_RxMessage->Data);
      break;
@@ -205,16 +207,6 @@ void Device_FDCAN3_Callback(Struct_FDCAN_Rx_Buffer *FDCAN_RxMessage)
  * @param Buffer UART5收到的消息
  * @param Length 长度
  */
-/*void DR16_UART5_Callback(uint8_t *Buffer, uint16_t Length)
-{
-  chariot.DR16.DR16_UART_RxCpltCallback(Buffer);
-  // 底盘 云台 发射机构 的控制策略
-  chariot.TIM_Control_Callback();
-}*/
-
-/** @brief UART5 FSI6X回调函数
- * 
- */
 void FSI6X_UART5_Callback(uint8_t *Buffer, uint16_t Length)
 {
   
@@ -248,12 +240,7 @@ uint8_t mod10 = 0;
 void Task100us_TIM4_Callback()
 {
   // todo
-  mod10++;
-  if (mod10 >= 10)
-  {
-    mod10 = 0;
-    TIM_CAN_PeriodElapsedCallback();
-  }
+ 
   
   
 }
@@ -267,42 +254,40 @@ float current = 1.0f;
 uint32_t flag = 0;
 void Task1ms_TIM5_Callback()
 {
-   DWT_Update();
+   //DWT_Update();
    mod100++;
   if (mod100 >= 100)
   {
-    mod100 = 0;
- 
     Motor_DJI_C610_0.TIM_100ms_Alive_PeriodElapsedCallback();
     Motor_DJI_C620_0.TIM_100ms_Alive_PeriodElapsedCallback();
     Motor_DJI_GM6020_0.TIM_100ms_Alive_PeriodElapsedCallback();
     Motor_DM_Normal_0.TIM_Alive_PeriodElapsedCallback();
     Motor_RS_MIT_0.TIM_Alive_PeriodElapsedCallback();
     Motor_RMD_0.TIM_100ms_Alive_PeriodElapsedCallback();
-
+    mod100 = 0;//必须放在最后
   }
   
-  #ifdef C610_TEST
+  #ifdef C610_TEST //Y
   Motor_DJI_C610_0.TIM_Calculate_PeriodElapsedCallback()
    Motor_DJI_C610_0.Set_Feedforward_Current(current);
    FDCAN_Send_Data(&hfdcan1, 0x1ff, FDCAN1_0x1ff_Tx_Data , FDCAN_ID_Standard, 8); 
    #endif
 
-   #ifdef C620_TEST
+   #ifdef C620_TEST //Y
    Motor_DJI_C620_0.TIM_Calculate_PeriodElapsedCallback();
    Motor_DJI_C620_0.Set_Feedforward_Current(current);
    FDCAN_Send_Data(&hfdcan1, 0x1ff, FDCAN1_0x1ff_Tx_Data , FDCAN_ID_Standard, 8); 
    #endif
    
 
-   #ifdef GM6020_TEST
+   #ifdef GM6020_TEST //Y
    Motor_DJI_GM6020_0.TIM_Calculate_PeriodElapsedCallback();
    Motor_DJI_GM6020_0.Set_Feedforward_Current(current);
    FDCAN_Send_Data(&hfdcan1, 0x1FE, FDCAN1_0x1fe_Tx_Data , FDCAN_ID_Standard, 8); 
    #endif
 
    #ifdef DM_NORMAL_TEST
-   Motor_DM_Normal_0.TIM_Send_PeriodElapsedCallback();
+    Motor_DM_Normal_0.TIM_Send_PeriodElapsedCallback();
     Motor_DM_Normal_0.Set_Control_Torque(current);
     Motor_DM_Normal_0.CAN_Send_Enter();
    #endif
@@ -322,6 +307,7 @@ void Task1ms_TIM5_Callback()
    MotorControl_Init();
    MotorControl_Update();
    #endif
+   
    
   
 }
@@ -385,27 +371,9 @@ void Task_Init()
   Motor_RMD_0.Init(&hfdcan1,0x241,Motor_RMD_Control_Method_ANGLE);
   #endif
   
-  //chariot.Init(0.03);
-
-
-
-
-
-  //iot.Init(0.03);
-
-
-  // 设备层初始化
-
-  // 战车层初始化
-
-  // 交互层初始化
-
-  // 机器人战车初始化
-
   // 使能调度时钟
   HAL_TIM_Base_Start_IT(&htim4);
   HAL_TIM_Base_Start_IT(&htim5);
-  // 标记初始化完成
   init_finished = true;
 }
 
@@ -415,6 +383,8 @@ void Task_Init()
  */
 void Task_Loop()
 {
+   
+    
 }
 
 /************************ COPYRIGHT(C) USTC-ROBOWALKER **************************/

@@ -1,6 +1,0 @@
-r
-halt
-loadfile "c:\Users\clover\Desktop\Wulin_R1 - ¸±±¾\MDK-ARM\build\H723VGT6_Demo\H723VGT6_Demo.hex"
-r
-go
-exit
