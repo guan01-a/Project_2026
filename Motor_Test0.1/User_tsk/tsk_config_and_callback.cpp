@@ -264,7 +264,7 @@ void Task1ms_TIM5_Callback()
     Motor_DM_Normal_0.TIM_Alive_PeriodElapsedCallback();
     Motor_RS_MIT_0.TIM_Alive_PeriodElapsedCallback();
     Motor_RMD_0.TIM_100ms_Alive_PeriodElapsedCallback();
-    mod100 = 0;//必须放在最后
+    mod100 = 0;
   }
   
   #ifdef C610_TEST //Y
