@@ -270,7 +270,7 @@ void Task1ms_TIM5_Callback()
    mod100++;
   if (mod100 >= 100)
   {
-    mod100 = 0;
+   
  
     Motor_DJI_C610_0.TIM_100ms_Alive_PeriodElapsedCallback();
     Motor_DJI_C620_0.TIM_100ms_Alive_PeriodElapsedCallback();
@@ -278,6 +278,7 @@ void Task1ms_TIM5_Callback()
     Motor_DM_Normal_0.TIM_Alive_PeriodElapsedCallback();
     Motor_RS_MIT_0.TIM_Alive_PeriodElapsedCallback();
     Motor_RMD_0.TIM_100ms_Alive_PeriodElapsedCallback();
+    mod100 = 0;
 
   }
   
